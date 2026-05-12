@@ -11,14 +11,10 @@ dataset:
 llm:
   provider: "openai"
   model: "Pro/deepseek-ai/DeepSeek-V3.2"
-  api_key: "sk-cbpmyndplejzqmzzwfhmtlkwhamhmrijkxogijtgabjzijyf"
-  base_url: "https://api.siliconflow.cn/v1"
 
 embedding:
   provider: "openai"
   model: "Pro/BAAI/bge-m3"
-  api_key: "sk-cbpmyndplejzqmzzwfhmtlkwhamhmrijkxogijtgabjzijyf"
-  base_url: "https://api.siliconflow.cn/v1"
   dimension: 1024
 
 vector_db:

@@ -1,4 +1,4 @@
-docker_volumes
+docker_volumes/
 .vscode
 .ruff_cache
 __pycache__
