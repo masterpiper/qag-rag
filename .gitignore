@@ -1,0 +1,14 @@
+docker_volumes
+.vscode
+.ruff_cache
+__pycache__
+.ipynb_checkpoints
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.sqlite
+*.log
+.env
+CLAUDE.md
+QWEN.md

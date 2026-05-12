@@ -12,26 +12,26 @@ This file provides guidance to Claude Code (claude.ai/code) when working with th
 
 ```
 QAG-RAG/
-├── core/                    # 核心库
-│   ├── llm_provider.py      # LLM 抽象层：OllamaProvider + OpenAIProvider（文本生成 + 嵌入）
-│   ├── prompt.py            # 分隔符常量 + Prompt 模板（实体/关系抽取、查询生成、摘要）
-│   ├── retrieval.py         # QueryDocumentRetrieval：Milvus + Neo4j 混合检索（PoKE召回、深度召回、关键词过滤）
-│   ├── reranker.py          # EntityReranker：两阶段重排序（向量余弦相似度 + spaCy 实体语义匹配）
-│   └── utils.py             # 工具函数：query_generation、entity_extractor、tuple_extractor、query_summary
-├── pipelines/               # 数据处理流水线
-│   ├── generate_queries.py  # 段落 → LLM 子查询生成 → Milvus 插入（bioasq_query 集合）
-│   └── build_graph.py       # Milvus → Neo4j 知识图谱构建（Query/Doc 节点，RELATED/GENERATE_BY 边）
-├── config/                  # YAML 实验配置（需手动加载）
-│   └── bioasq_openai_qag.yaml
-├── docker-compose.yaml      # Neo4j（4 实例）、Ollama、Milvus GPU、OpenWebUI、Etcd、MinIO
-├── demo/                    # 空 — 预留 demo 脚本
-├── experiments/             # 空 — 预留实验脚本
-└── notebooks/               # 空 — 预留 Jupyter 笔记本
+├── qag-rag/                    # 核心代码（注意目录名含连字符，无法作为 Python 包导入）
+│   ├── core/                   # 核心库
+│   │   ├── llm_provider.py     # LLM 抽象层：OllamaProvider + OpenAIProvider（文本生成 + 嵌入）
+│   │   ├── prompt.py           # 分隔符常量 + Prompt 模板
+│   │   ├── retrieval.py        # QueryDocumentRetrieval：Milvus + Neo4j 混合检索
+│   │   ├── reranker.py         # EntityReranker：两阶段重排序（向量余弦 + spaCy 实体语义匹配）
+│   │   └── utils.py            # 工具函数：query_generation、entity_extractor、tuple_extractor、query_summary
+│   └── pipelines/              # 数据处理流水线
+│       ├── generate_queries.py # 段落 → LLM 子查询生成 → Milvus 插入
+│       └── build_graph.py      # Milvus → Neo4j 知识图谱构建
+├── bioasq_openai_qag.yaml      # YAML 实验配置（原 config/ 目录已移除）
+├── docker-compose.yaml         # Neo4j（4 实例）+ Milvus GPU（standalone + etcd + minio + attu）
+├── data/                       # 语料数据集（HuggingFace Dataset 格式）
+├── qag-rag-ui/                 # 空 — 预留前端目录
+└── docs/                       # 空 — 预留文档目录
 ```
 
 ### 关键设计模式
 
-- **LLM 后端无关**：`BaseLLMProvider` 抽象类，`OllamaProvider` 和 `OpenAIProvider` 两种实现。工厂函数 `get_llm_provider(type, **kwargs)` 选择后端，均支持 `generate()` 和 `embed()`。
+- **LLM 后端无关**：`BaseLLMProvider` 抽象类，`OllamaProvider` 和 `OpenAIProvider` 两种实现。工厂函数 `get_llm_provider` / `get_embedding_provider` 选择后端。
 - **基于分隔符的结构化抽取**：Prompt 使用自定义 XML 分隔符（`<q>`、`<entity>`、`<name>`、`<type>`、`<description>`、`<relation>`、`<tuple>`），通过正则表达式解析。
 - **双向量数据库架构**：Milvus 负责向量相似度搜索（query collection + chunk collection），Neo4j 负责图遍历（多跳 RELATED/GENERATE_BY 关系）。
 - **QAG 召回策略**：`qag_recall_documents()` 结合四种策略——向量文档检索、相似查询召回、关键词过滤（KeyBERT，已禁用）、图多跳遍历。
@@ -39,9 +39,18 @@ QAG-RAG/
 
 ## 开发环境
 
+### 依赖安装
+
+`requirements.txt` 为空，需手动安装以下依赖（从代码导入推导）：
+
+```bash
+pip install openai ollama pymilvus neo4j scikit-learn numpy spacy keybert datasets tqdm
+python -m spacy download en_core_web_sm
+```
+
 ### 缺失的 `config.py` 模块
 
-流水线代码引用 `from config import milvus_config, neo4j_config, retrieval_config, llm_config, embedding_config`，但**项目根目录不存在 `config.py`**。需在 `core/` 同级目录创建该文件，定义以下数据类对象（字段从代码调用处推导）：
+`qag-rag/core/retrieval.py` 与 `qag-rag/pipelines/*.py` 均引用 `from config import milvus_config, neo4j_config, retrieval_config, llm_config, embedding_config`，但**项目根目录不存在 `config.py`**。需在根目录创建该文件，内容参考如下：
 
 ```python
 from dataclasses import dataclass
@@ -93,45 +102,54 @@ llm_config = LLMConfig()
 embedding_config = EmbeddingConfig()
 ```
 
-### `requirements.txt` 为空
+### 路径与导入问题（重要）
 
-需手动安装以下依赖（从代码导入推导）：
-`openai`, `ollama`, `pymilvus`, `neo4j`, `scikit-learn`, `numpy`, `spacy`, `keybert`, `datasets`, `tqdm`
+`core/` 与 `pipelines/` 近期从根目录移入 `qag-rag/` 子目录，但脚本中的相对路径未同步更新，导致以下问题：
+
+1. **包名含连字符**：`qag-rag` 含连字符，无法通过 `python -m qag-rag.pipelines.xxx` 运行。
+2. **`sys.path.insert(0, '..')` 失效**：`qag-rag/pipelines/*.py` 使用 `..` 期望导入根目录的 `config` 模块；现在 `..` 指向 `qag-rag/`，导致 `config` 无法解析。
+3. **数据集路径失效**：`generate_queries.py` 中 `load_from_disk("../data/rag_mini_bioasq_corpus")` 以 cwd 为基准；在当前的嵌套目录结构下，`../data/` 不再指向根目录的 `data/`。
+
+**当前可行的运行方式**：
+- 方案 A：在 `qag-rag/` 内新建 `config.py`，并将 `data/` 复制或软链接到 `qag-rag/data/`，然后从 `qag-rag/pipelines/` 运行：
+  ```bash
+  cd qag-rag/pipelines
+  python generate_queries.py
+  ```
+- 方案 B：在根目录运行，手动修正 `PYTHONPATH` 并将数据路径改为绝对路径或调整 cwd。
 
 ### 运行流水线
 
 ```bash
-# 在项目根目录：
-python -m pipelines.generate_queries   # 从语料生成查询 → Milvus
-python -m pipelines.build_graph        # 构建知识图谱：Milvus → Neo4j
+# 方案 A（需先在 qag-rag/ 内准备好 config.py 与 data/）：
+cd qag-rag/pipelines
+python generate_queries.py   # 从语料生成查询 → Milvus
+python build_graph.py        # 构建知识图谱：Milvus → Neo4j
 ```
-
-两个流水线都做了 `sys.path.insert(0, '..')` 以从根目录导入模块，因此必须从 `pipelines/` 目录运行或用 `-m` 从根目录运行。
 
 ### Docker 服务
 
 ```bash
-docker compose up -d                  # 启动所有服务
+docker compose up -d
 ```
 
 服务端点：
 - **Neo4j（主）**：HTTP `localhost:17474`，Bolt `localhost:17687`（用户 `neo4j`，密码 `neo4j123`）
 - **Neo4j（deepseek）**：HTTP `localhost:17475`，Bolt `localhost:17688`
-- **Neo4j（bright qwen）**：HTTP `localhost:17476`，Bolt `localhost:17689`
+- **Neo4j（bright qwen3-1.7b）**：HTTP `localhost:17476`，Bolt `localhost:17689`
 - **Neo4j（test）**：HTTP `localhost:17477`，Bolt `localhost:17690`
 - **Milvus**：gRPC `localhost:19530`，web UI `localhost:9091`
-- **Ollama**：`localhost:11444`（本地 Ollama 在 `11434`）
-- **OpenWebUI**：`localhost:18181`
+- **Attu（Milvus UI）**：`localhost:18000`
 
-### 数据集路径
+### 数据集
 
-语料从 `../data/rag_mini_bioasq_corpus` 加载（相对于 `pipelines/`）。预期格式为 HuggingFace `Dataset`，`passages` 包含 `id` 和 `passage` 字段。
+语料预期为 HuggingFace `Dataset`，`passages` 包含 `id` 和 `passage` 字段。原始路径在 `data/rag_mini_bioasq_corpus`（根目录）。
 
 ## 注意事项
 
-- `config/bioasq_openai_qag.yaml` 包含明文的 SiliconFlow API Key，应迁移至 `.env` 或环境变量
-- `.env` 文件存在但为空，用于存放密钥
-- `generate_queries.py` 中的 `RECOVER` 常量和 `MODE = "fix"` 用于中断恢复和重试失败 ID
-- `build_graph.py` 的 `skip_batches = 366` 用于断点续建
-- 代码注释主要为中文，Prompt 和文档字符串为英文
-- 无 `tests/` 目录、无 `pyproject.toml`、无 `setup.py`，以脚本形式运行
+- `bioasq_openai_qag.yaml` 包含明文的 SiliconFlow API Key，应迁移至 `.env` 或环境变量。`.env.example` 已提供模板。
+- `.env` 文件存在但为空，用于存放密钥。
+- `generate_queries.py` 中的 `RECOVER` 常量和 `MODE = "fix"` 用于中断恢复和重试失败 ID。
+- `build_graph.py` 的 `skip_batches = 366` 用于断点续建。
+- 代码注释主要为中文，Prompt 和文档字符串为英文。
+- 无 `tests/` 目录、无 `pyproject.toml`、无 `setup.py`，以脚本形式运行。
