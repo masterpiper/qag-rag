@@ -1,0 +1,181 @@
+
+name: rag-lab
+
+services:
+  # ---------------- Neo4j ----------------
+  # test
+  neo4j_test:
+    image: neo4j:5.26.12
+    container_name: neo4j-test
+    restart: unless-stopped
+    ports:
+      - "17477:7474" # HTTP UI
+      - "17690:7687" # Bolt
+    environment:
+      - NEO4J_AUTH=neo4j/neo4j123 # 用户名密码
+    volumes:
+      - ./docker_volumes/neo4j_test/data:/data
+      - ./docker_volumes/neo4j_test/logs:/logs
+      - ./docker_volumes/neo4j_test/conf:/var/lib/neo4j/conf
+      - ./docker_volumes/neo4j_test/import:/var/lib/neo4j/import
+      - ./docker_volumes/neo4j_test/plugins:/var/lib/neo4j/plugins
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:17690"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - experiment-net
+  # localhost:17476
+  neo4j_bright_qwen3_1_7b:
+      image: neo4j:5.26.12
+      container_name: neo4j-bright-qwen3-1-7b
+      restart: unless-stopped
+      ports:
+        - "17476:7474" # HTTP UI
+        - "17689:7687" # Bolt
+      environment:
+        - NEO4J_AUTH=neo4j/neo4j123 # 用户名密码
+      volumes:
+        - ./docker_volumes/neo4j_bright_qwen3_1_7b/data:/data
+        - ./docker_volumes/neo4j_bright_qwen3_1_7b/logs:/logs
+        - ./docker_volumes/neo4j_bright_qwen3_1_7b/conf:/var/lib/neo4j/conf
+        - ./docker_volumes/neo4j_bright_qwen3_1_7b/import:/var/lib/neo4j/import
+        - ./docker_volumes/neo4j_bright_qwen3_1_7b/plugins:/var/lib/neo4j/plugins
+      healthcheck:
+        test: ["CMD", "curl", "-f", "http://localhost:17689"]
+        interval: 10s
+        timeout: 5s
+        retries: 5
+      networks:
+        - experiment-net
+  # localhost:17475
+  neo4j_deepseek:
+      image: neo4j:5.26.12
+      container_name: neo4j-deepseek
+      restart: unless-stopped
+      ports:
+        - "17475:7474" # HTTP UI
+        - "17688:7687" # Bolt
+      environment:
+        - NEO4J_AUTH=neo4j/neo4j123 # 用户名密码
+      volumes:
+        - ./docker_volumes/neo4j_deepseek/data:/data
+        - ./docker_volumes/neo4j_deepseek/logs:/logs
+        - ./docker_volumes/neo4j_deepseek/conf:/var/lib/neo4j/conf
+        - ./docker_volumes/neo4j_deepseek/import:/var/lib/neo4j/import
+        - ./docker_volumes/neo4j_deepseek/plugins:/var/lib/neo4j/plugins
+      healthcheck:
+        test: ["CMD", "curl", "-f", "http://localhost:17688"]
+        interval: 10s
+        timeout: 5s
+        retries: 5
+      networks:
+        - experiment-net
+  # localhost:17474
+  neo4j:
+    image: neo4j:5.26.12
+    container_name: neo4j-rag
+    restart: unless-stopped
+    ports:
+      - "17474:7474" # HTTP UI
+      - "17687:7687" # Bolt
+    environment:
+      - NEO4J_AUTH=neo4j/neo4j123 # 用户名密码
+    volumes:
+      - ./docker_volumes/neo4j/data:/data
+      - ./docker_volumes/neo4j/logs:/logs
+      - ./docker_volumes/neo4j/conf:/var/lib/neo4j/conf
+      - ./docker_volumes/neo4j/import:/var/lib/neo4j/import
+      - ./docker_volumes/neo4j/plugins:/var/lib/neo4j/plugins
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:17687"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - experiment-net
+  # ---------------- Milvus GPU----------------
+  # http://127.0.0.1:9091/webui/
+  # user:root
+  # passwd:Milvus
+  etcd:
+    container_name: milvus-rag
+    image: quay.io/coreos/etcd:v3.5.18
+    environment:
+      - ETCD_AUTO_COMPACTION_MODE=revision
+      - ETCD_AUTO_COMPACTION_RETENTION=1000
+      - ETCD_QUOTA_BACKEND_BYTES=4294967296
+      - ETCD_SNAPSHOT_COUNT=50000
+    ports:
+      - "2379:2379"
+    volumes:
+      - ./docker_volumes/etcd:/etcd
+    command: etcd -advertise-client-urls=http://etcd:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  minio:
+    container_name: milvus-minio-rag
+    image: minio/minio:RELEASE.2024-12-18T13-15-44Z
+    environment:
+      MINIO_ACCESS_KEY: minioadmin  #用户名
+      MINIO_SECRET_KEY: minioadmin  #密码
+    ports:
+      - "9001:9001"
+      - "9000:9000"
+    volumes:
+      - ./docker_volumes/minio:/minio_data
+    command: minio server /minio_data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  standalone:
+    container_name: milvus-standalone-rag
+    image: milvusdb/milvus:v2.6.1-gpu
+    command: ["milvus", "run", "standalone"]
+    security_opt:
+    - seccomp:unconfined
+    environment:
+      ETCD_ENDPOINTS: etcd:2379
+      MINIO_ADDRESS: minio:9000
+      MQ_TYPE: woodpecker
+    volumes:
+      - ./docker_volumes/milvus:/var/lib/milvus
+    ports:
+      - "19530:19530"
+      - "9091:9091"
+    deploy:
+      resources:
+        # limits:
+        #   memory: 8G
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: ["gpu"]
+              device_ids: ["0"]
+    depends_on:
+      - "etcd"
+      - "minio"
+    
+  attu:
+    container_name: attu-rag
+    image: zilliz/attu:v2.2.8
+    environment:
+      MILVUS_URL: milvus-standalone:19530
+    ports:
+    - "18000:3000"
+    depends_on:
+    - "standalone"
+
+networks:
+  default:
+    name: milvus-rag
+  experiment-net:
+    driver: bridge
