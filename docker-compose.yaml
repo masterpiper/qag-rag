@@ -27,28 +27,28 @@ services:
     networks:
       - experiment-net
   # localhost:17476
-  neo4j_bright_qwen3_1_7b:
-      image: neo4j:5.26.12
-      container_name: neo4j-bright-qwen3-1-7b
-      restart: unless-stopped
-      ports:
-        - "17476:7474" # HTTP UI
-        - "17689:7687" # Bolt
-      environment:
-        - NEO4J_AUTH=neo4j/neo4j123 # 用户名密码
-      volumes:
-        - ./docker_volumes/neo4j_bright_qwen3_1_7b/data:/data
-        - ./docker_volumes/neo4j_bright_qwen3_1_7b/logs:/logs
-        - ./docker_volumes/neo4j_bright_qwen3_1_7b/conf:/var/lib/neo4j/conf
-        - ./docker_volumes/neo4j_bright_qwen3_1_7b/import:/var/lib/neo4j/import
-        - ./docker_volumes/neo4j_bright_qwen3_1_7b/plugins:/var/lib/neo4j/plugins
-      healthcheck:
-        test: ["CMD", "curl", "-f", "http://localhost:17689"]
-        interval: 10s
-        timeout: 5s
-        retries: 5
-      networks:
-        - experiment-net
+  # neo4j_bright_qwen3_1_7b:
+  #     image: neo4j:5.26.12
+  #     container_name: neo4j-bright-qwen3-1-7b
+  #     restart: unless-stopped
+  #     ports:
+  #       - "17476:7474" # HTTP UI
+  #       - "17689:7687" # Bolt
+  #     environment:
+  #       - NEO4J_AUTH=neo4j/neo4j123 # 用户名密码
+  #     volumes:
+  #       - ./docker_volumes/neo4j_bright_qwen3_1_7b/data:/data
+  #       - ./docker_volumes/neo4j_bright_qwen3_1_7b/logs:/logs
+  #       - ./docker_volumes/neo4j_bright_qwen3_1_7b/conf:/var/lib/neo4j/conf
+  #       - ./docker_volumes/neo4j_bright_qwen3_1_7b/import:/var/lib/neo4j/import
+  #       - ./docker_volumes/neo4j_bright_qwen3_1_7b/plugins:/var/lib/neo4j/plugins
+  #     healthcheck:
+  #       test: ["CMD", "curl", "-f", "http://localhost:17689"]
+  #       interval: 10s
+  #       timeout: 5s
+  #       retries: 5
+  #     networks:
+  #       - experiment-net
   # localhost:17475
   neo4j_deepseek:
       image: neo4j:5.26.12

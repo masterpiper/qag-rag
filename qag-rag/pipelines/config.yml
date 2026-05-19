@@ -1,0 +1,19 @@
+# QAG-RAG 检索与遍历参数配置
+
+retrieval:
+  query_top_k: 5
+  doc_top_k: 5
+  graph_depth: 3
+  merge_threshold: 0.9
+  related_threshold: 0.7
+  limite_num_q: 6
+  limite_related_docs: 30
+
+llm:
+  provider: "openai"
+  model: "Pro/deepseek-ai/DeepSeek-V3.2"
+
+embedding:
+  provider: "openai"
+  model: "Pro/BAAI/bge-m3"
+  dimension: 1024

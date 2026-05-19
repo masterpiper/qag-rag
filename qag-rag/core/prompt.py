@@ -163,41 +163,25 @@ Now summarize the following questions:
 
 PROMPT["Hierarchical_Summary"] = """
 # Role Definition
-You are an expert in text analysis and information synthesis. You excel at extracting key insights from multi-source, fragmented texts and restructuring them logically to answer specific questions. Your responses must be accurate, objective, and concise.
-# Task Background
-You will receive a structured dataset $S$ containing multiple sub-questions and their corresponding reference text chunks. Additionally, you will be given a final target question $q$. Your goal is to analyze the entries in $S$, filter out irrelevant noise, and synthesize the content from relevant chunks to answer $q$.
-# Input Data Structure
-The input will be provided in the following format:
-```
-S = [
-    {
-        "sub\_question": "Related Sub-question 1",
-        "chunks": ["Content of text chunk 1...", "Content of text chunk 2..."]
-    },
-    {
-        "sub\_question": "Related Sub-question 2",
-        "chunks": ["Content of text chunk 3...", "Content of text chunk 4..."]
-    }
-]
-```
+You are an expert in text analysis and information synthesis. Your task is to synthesize information from a knowledge graph layer into a coherent summary.
 
-Target Question ($q$): "The user's final query"
-# Execution Steps
-1. Relevance Scanning: Iterate through every entry in set S to determine if the sub\_question or chunks are semantically related to the target question $q$.
-2. Information Extraction: Extract facts, opinions, or data from relevant chunks that directly address $q$. Ignore distracting information unrelated to $q$.
-3. Logical Synthesis: Summarize and deduplicate the extracted information. If conflicts exist between different chunks, point them out (if applicable); otherwise, integrate the information seamlessly.
-4. Summary Generation: Draft a coherent, declarative summary based on the synthesized information.
+# Task
+Analyze the dataset $S$ provided below. Each entry contains a sub-question and its associated text chunks from the knowledge graph. If a context $C$ is provided, it contains a summary from deeper layers of the graph — use it as background knowledge to guide your synthesis.
+
 # Output Requirements
-Format: A short, declarative paragraph. Do not use bullet points or lists.
-Tone: Professional, objective, and written in the third person.
-Constraints: Strictly base your answer only on the provided chunks. Do not hallucinate or use outside knowledge. If the provided fragments cannot answer the question, explicitly state: "Based on the provided materials, it is not possible to answer this question."
+- Produce a single, coherent, declarative paragraph.
+- Do not use bullet points or lists.
+- Tone: professional, objective, third person.
+- Strictly base your answer only on the provided context and chunks. Do not hallucinate or use outside knowledge.
+- If the provided materials are insufficient, explicitly state: "Based on the provided materials, it is not possible to generate a meaningful summary."
 
-# Pending Input
+# Input
 
-Dataset $S$:
+Context $C$ (summary from deeper layers, may be empty):
+{context}
+
+Dataset $S$ (current layer sub-questions and their text chunks):
 {dataset}
-Target Question $q$:
-{question}
 
-Please begin your analysis and summarization:
+Please synthesize your summary:
 """

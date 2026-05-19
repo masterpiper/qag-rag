@@ -1,0 +1,16 @@
+openai
+ollama
+pymilvus
+neo4j
+scikit-learn
+numpy
+spacy
+keybert
+datasets
+tqdm
+dashscope
+pyyaml
+fastapi
+uvicorn
+pydantic
+python-dotenv
