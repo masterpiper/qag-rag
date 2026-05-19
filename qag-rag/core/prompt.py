@@ -161,27 +161,60 @@ Now summarize the following questions:
 """
 
 
+#=================================================
+# Hierarchical Summarization Prompt (P_sum)
+# Corresponds to Eq. 10 in the paper:
+#   S^(H) = Sum(Q^(H), P_sum, C^(H))
+#   S^(h) = Sum(Q^(h), P_sum, C^(h), S^(h+1))  for 1 <= h < H
+#=================================================
 PROMPT["Hierarchical_Summary"] = """
-# Role Definition
-You are an expert in text analysis and information synthesis. Your task is to synthesize information from a knowledge graph layer into a coherent summary.
-
-# Task
-Analyze the dataset $S$ provided below. Each entry contains a sub-question and its associated text chunks from the knowledge graph. If a context $C$ is provided, it contains a summary from deeper layers of the graph — use it as background knowledge to guide your synthesis.
-
-# Output Requirements
-- Produce a single, coherent, declarative paragraph.
-- Do not use bullet points or lists.
-- Tone: professional, objective, third person.
-- Strictly base your answer only on the provided context and chunks. Do not hallucinate or use outside knowledge.
-- If the provided materials are insufficient, explicitly state: "Based on the provided materials, it is not possible to generate a meaningful summary."
+You are an expert in text analysis and information synthesis. Your task is to produce a layered summary of a retrieval tree, combining evidence from both deeper-layer context and current-layer text chunks.
 
 # Input
 
-Context $C$ (summary from deeper layers, may be empty):
-{context}
-
-Dataset $S$ (current layer sub-questions and their text chunks):
+Dataset $S$ — current layer sub-questions and their associated text chunks:
 {dataset}
 
-Please synthesize your summary:
+Context $C$ — synthesized summary from deeper layers of the retrieval tree (may be empty):
+{context}
+
+# Task
+1. Context $C$ is the PRIMARY information source — it is a synthesized summary already consolidated from deeper retrieval hops. If Context $C$ contains meaningful evidence, your output MUST preserve and build upon it. Do NOT discard Context $C$ just because some entries in Dataset $S$ are unrelated.
+2. Examine each entry in Dataset $S$. If any sub-question has non-empty chunks that are related to or complement Context $C$, extract those facts and integrate them. If chunks are empty or cover topics unrelated to Context $C$, simply ignore those entries — do NOT let unrelated entries distract from the main evidence.
+3. Only output "Based on the provided materials, no relevant information was found." if BOTH conditions are met: (a) Context $C$ is empty or literally "None", AND (b) all chunks across every entry in $S$ are empty or contain no meaningful evidence. When Context $C$ is non-empty, you MUST produce a substantive summary based on it.
+4. If conflicting information exists between chunks and Context $C$, explicitly note the conflict.
+5. Produce a single, coherent, declarative paragraph that synthesizes all relevant information.
+
+# Output Requirements
+- Format: a single declarative paragraph. No bullet points, lists, or structured formatting.
+- Tone: professional, objective, third person.
+- Strictly base your summary on the provided Dataset $S$ and Context $C$. Do not hallucinate or use outside knowledge.
+- The fallback message "Based on the provided materials, no relevant information was found." must ONLY be used when Context $C$ is empty AND no chunks provide any evidence. When Context $C$ is non-empty, ALWAYS produce a substantive summary based on it.
+"""
+
+#=================================================
+# Answer Synthesis Prompt (P_ans)
+# Corresponds to Eq. 11 in the paper:
+#   Ans = Res(q, P_ans, S^(1))
+#=================================================
+PROMPT["answer_synthesis"] = """
+You are an expert in question answering. Your task is to generate a direct, accurate answer to the user's question based on the provided summary of retrieved evidence.
+
+# Input
+
+Target Question: {question}
+
+Evidence Summary S^(1) — synthesized from the complete multi-hop retrieval tree:
+{summary}
+
+# Task
+1. Carefully analyze the Evidence Summary to identify information that directly addresses the Target Question.
+2. Formulate a clear, concise answer grounded entirely in the provided summary.
+3. If the Evidence Summary does not contain sufficient information to answer the question, explicitly state: "Based on the provided materials, this question cannot be answered."
+
+# Output Requirements
+- Provide a direct answer to the question.
+- Be concise and specific. Avoid unnecessary elaboration.
+- Strictly base your answer on the Evidence Summary. Do not hallucinate or use outside knowledge.
+- If the question is a yes/no or factual question, lead with the direct answer, then briefly cite supporting evidence.
 """

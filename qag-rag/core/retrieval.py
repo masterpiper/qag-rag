@@ -59,8 +59,8 @@ class QueryDocumentRetrieval:
             db_name=self.milvus_config.db_name
         )
         
-        # KeyBERT 关键词提取模型
-        self.kw_model = KeyBERT()
+        # KeyBERT 关键词提取模型（延迟初始化，仅在首次使用时加载）
+        self._kw_model: Optional[KeyBERT] = None
 
     def query_retrieval(self, input_text: str, top_k: int = 5) -> List[Dict[str, Any]]:
         """
@@ -121,7 +121,9 @@ class QueryDocumentRetrieval:
             提取的关键词列表
         """
         # 使用 KeyBERT 提取关键词，ngram 范围为 1-2，去除英文停用词，返回前 5 个关键词
-        keywords = self.kw_model.extract_keywords(
+        if self._kw_model is None:
+            self._kw_model = KeyBERT()
+        keywords = self._kw_model.extract_keywords(
             text, 
             keyphrase_ngram_range=(1, 2), 
             stop_words='english', 

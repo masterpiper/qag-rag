@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>QAG-RAG 检索可视化</title>
+    <title>QAG-RAG Retrieval Visualization</title>
     <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -82,7 +82,7 @@
             font-family: 'Consolas', 'Monaco', monospace;
             font-size: 12px;
             color: #d4d4d4;
-            max-height: 160px;
+            max-height: 350px;
             overflow-y: auto;
             line-height: 1.5;
         }
@@ -156,13 +156,19 @@
     </style>
 </head>
 <body>
-    <header>QAG-RAG 检索可视化</header>
+    <header>
+        <span data-i18n="page_title">QAG-RAG Retrieval Visualization</span>
+        <button id="langToggle" onclick="toggleLang()" title="Switch language"
+                style="float:right;background:transparent;border:1px solid rgba(255,255,255,0.4);
+                       color:white;padding:4px 10px;border-radius:4px;cursor:pointer;
+                       font-size:13px;margin-top:-2px;">EN</button>
+    </header>
     <div class="container">
         <aside class="sidebar">
-            <h2>输入问题</h2>
-            <textarea id="questionInput" placeholder="请输入您的问题...">What are the Yamanaka factors?</textarea>
+            <h2 data-i18n="input_question">Input Question</h2>
+            <textarea id="questionInput" data-i18n-placeholder="question_placeholder" placeholder="Enter your question...">What are the Yamanaka factors?</textarea>
 
-            <h2>检索参数</h2>
+            <h2 data-i18n="retrieval_params">Retrieval Parameters</h2>
             <div class="param-row">
                 <div class="param-group">
                     <label>query_top_k</label>
@@ -184,17 +190,30 @@
                 </div>
             </div>
 
-            <button id="retrieveBtn" onclick="doRetrieve()">执行检索</button>
-            <div class="status" id="statusText">就绪</div>
+            <div class="param-row">
+                <label class="checkbox-label" style="display:flex;align-items:center;gap:6px;font-size:13px;color:#555;cursor:pointer">
+                    <input type="checkbox" id="paramFilterEnabled" checked onchange="toggleFilterInput()">
+                    <span data-i18n="enable_feature_filter">Enable Feature Filter</span>
+                </label>
+            </div>
+            <div class="param-row">
+                <div class="param-group">
+                    <label>filter_threshold</label>
+                    <input type="number" id="paramFilterThreshold" value="0.6" min="0" max="1" step="0.05" disabled>
+                </div>
+            </div>
 
-            <h2>运行日志</h2>
-            <div class="log-panel" id="logPanel">等待检索...</div>
+            <button id="retrieveBtn" data-i18n="retrieve_btn" onclick="doRetrieve()">Retrieve</button>
+            <div class="status" id="statusText" data-i18n="status_ready">Ready</div>
+
+            <h2 data-i18n="runtime_log">Runtime Log</h2>
+            <div class="log-panel" id="logPanel" data-i18n="waiting_msg">Waiting for retrieval...</div>
         </aside>
         <main class="main">
             <div class="row">
                 <div class="panel">
                     <div class="panel-header">
-                        <span>子图（Subgraph）</span>
+                        <span data-i18n="subgraph_panel">Subgraph</span>
                         <div class="legend">
                             <div class="legend-item"><div class="legend-dot" style="background:#3498db"></div>Query</div>
                             <div class="legend-item"><div class="legend-dot" style="background:#2ecc71"></div>Doc</div>
@@ -206,7 +225,7 @@
                 </div>
                 <div class="panel">
                     <div class="panel-header">
-                        <span>树形结构（Tree）</span>
+                        <span data-i18n="tree_panel">Tree Structure</span>
                         <div class="legend">
                             <div class="legend-item"><div class="legend-dot" style="background:#e74c3c"></div>Root</div>
                             <div class="legend-item"><div class="legend-dot" style="background:#9b59b6"></div>Node</div>
@@ -219,9 +238,9 @@
                 </div>
             </div>
             <div class="panel answer-panel">
-                <div class="panel-header">最终汇总答案</div>
+                <div class="panel-header" data-i18n="final_answer_panel">Final Summary Answer</div>
                 <div class="panel-body">
-                    <div id="answerBox" class="answer-box">等待检索...</div>
+                    <div id="answerBox" class="answer-box" data-i18n="waiting_msg">Waiting for retrieval...</div>
                 </div>
             </div>
         </main>
@@ -231,18 +250,118 @@
         let subgraphNetwork = null;
         let treeNetwork = null;
 
+        // --- i18n ---
+        var I18N = {
+            zh: {
+                page_title: 'QAG-RAG 检索可视化',
+                input_question: '输入问题',
+                question_placeholder: '请输入您的问题...',
+                retrieval_params: '检索参数',
+                enable_feature_filter: '启用 Feature Filter',
+                retrieve_btn: '执行检索',
+                status_ready: '就绪',
+                runtime_log: '运行日志',
+                waiting_msg: '等待检索...',
+                subgraph_panel: '子图（Subgraph）',
+                tree_panel: '树形结构（Tree）',
+                final_answer_panel: '最终汇总答案',
+                prompt_enter_question: '请输入问题',
+                status_retrieving: '检索中...',
+                status_subgraph_done: '子图构建完成，正在转换树...',
+                status_tree_done: '树形结构已生成，正在汇总...',
+                status_completed: '检索完成 ({elapsed}s)',
+                status_failed: '检索失败: {error}',
+                status_truncated: '(展示 {qShown}/{qTotal} Query, {dShown}/{dTotal} Doc)',
+                more_docs_hidden: '... 还有 {count} 个 Doc 未显示',
+                lang_toggle_label: 'EN'
+            },
+            en: {
+                page_title: 'QAG-RAG Retrieval Visualization',
+                input_question: 'Input Question',
+                question_placeholder: 'Enter your question...',
+                retrieval_params: 'Retrieval Parameters',
+                enable_feature_filter: 'Enable Feature Filter',
+                retrieve_btn: 'Retrieve',
+                status_ready: 'Ready',
+                runtime_log: 'Runtime Log',
+                waiting_msg: 'Waiting for retrieval...',
+                subgraph_panel: 'Subgraph',
+                tree_panel: 'Tree Structure',
+                final_answer_panel: 'Final Summary Answer',
+                prompt_enter_question: 'Please enter a question',
+                status_retrieving: 'Retrieving...',
+                status_subgraph_done: 'Subgraph built, converting to tree...',
+                status_tree_done: 'Tree generated, summarizing...',
+                status_completed: 'Retrieval completed ({elapsed}s)',
+                status_failed: 'Retrieval failed: {error}',
+                status_truncated: '(Showing {qShown}/{qTotal} Query, {dShown}/{dTotal} Doc)',
+                more_docs_hidden: '... {count} more Docs not shown',
+                lang_toggle_label: '中'
+            }
+        };
+
+        function getCurrentLang() {
+            var stored = localStorage.getItem('qag_lang');
+            return (stored === 'zh' || stored === 'en') ? stored : 'en';
+        }
+
+        function i18n(key, params) {
+            var lang = getCurrentLang();
+            var text = I18N[lang][key];
+            if (!params) return text;
+            return text.replace(/\{(\w+)\}/g, function(_, k) {
+                return params[k] !== undefined ? params[k] : '{' + k + '}';
+            });
+        }
+
+        function applyLang(lang) {
+            document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
+            document.title = I18N[lang].page_title;
+            var els = document.querySelectorAll('[data-i18n]');
+            for (var i = 0; i < els.length; i++) {
+                var key = els[i].getAttribute('data-i18n');
+                if (I18N[lang][key] !== undefined) els[i].textContent = I18N[lang][key];
+            }
+            var phEls = document.querySelectorAll('[data-i18n-placeholder]');
+            for (var i = 0; i < phEls.length; i++) {
+                var key = phEls[i].getAttribute('data-i18n-placeholder');
+                if (I18N[lang][key] !== undefined) phEls[i].placeholder = I18N[lang][key];
+            }
+            var toggleBtn = document.getElementById('langToggle');
+            if (toggleBtn) toggleBtn.textContent = I18N[lang].lang_toggle_label;
+        }
+
+        function toggleLang() {
+            var current = getCurrentLang();
+            var next = current === 'zh' ? 'en' : 'zh';
+            localStorage.setItem('qag_lang', next);
+            applyLang(next);
+        }
+
+        function toggleFilterInput() {
+            const enabled = document.getElementById('paramFilterEnabled').checked;
+            document.getElementById('paramFilterThreshold').disabled = !enabled;
+        }
+
+        // Initialize
+        toggleFilterInput();
+        applyLang(getCurrentLang());
+
         function doRetrieve() {
             const question = document.getElementById('questionInput').value.trim();
             if (!question) {
-                alert('请输入问题');
+                alert(i18n('prompt_enter_question'));
                 return;
             }
             const btn = document.getElementById('retrieveBtn');
             const status = document.getElementById('statusText');
             const logPanel = document.getElementById('logPanel');
             btn.disabled = true;
-            status.textContent = '检索中...';
-            logPanel.innerHTML = '';
+            status.textContent = i18n('status_retrieving');
+            logPanel.textContent = '';
+            document.getElementById('answerBox').textContent = i18n('waiting_msg');
+            if (subgraphNetwork) { subgraphNetwork.destroy(); subgraphNetwork = null; }
+            if (treeNetwork) { treeNetwork.destroy(); treeNetwork = null; }
 
             // 构建请求体
             const body = { question };
@@ -250,10 +369,14 @@
             const graphDepth = parseInt(document.getElementById('paramGraphDepth').value);
             const docTopK = parseInt(document.getElementById('paramDocTopK').value);
             const relatedThreshold = parseFloat(document.getElementById('paramRelatedThreshold').value);
+            const filterEnabled = document.getElementById('paramFilterEnabled').checked;
+            const filterThreshold = parseFloat(document.getElementById('paramFilterThreshold').value);
             if (!isNaN(queryTopK)) body.query_top_k = queryTopK;
             if (!isNaN(graphDepth)) body.graph_depth = graphDepth;
             if (!isNaN(docTopK)) body.doc_top_k = docTopK;
             if (!isNaN(relatedThreshold)) body.related_threshold = relatedThreshold;
+            body.filter_enabled = filterEnabled;
+            if (!isNaN(filterThreshold) && filterEnabled) body.filter_threshold = filterThreshold;
 
             // 使用自定义 SSE 客户端（支持 POST）
             const eventSource = createSSE('/api/retrieve', {
@@ -267,13 +390,13 @@
             });
 
             eventSource.on('subgraph', (data) => {
-                status.textContent = '子图构建完成，正在转换树...';
+                status.textContent = i18n('status_subgraph_done');
                 renderSubgraph(data.subgraph);
             });
 
             eventSource.on('tree', (data) => {
-                status.textContent = '树形结构已生成，正在汇总...';
-                renderTree(data.tree);
+                status.textContent = i18n('status_tree_done');
+                renderTree(data.tree, data.graph_depth);
             });
 
             eventSource.on('answer', (data) => {
@@ -281,13 +404,13 @@
             });
 
             eventSource.on('done', (data) => {
-                status.textContent = '检索完成 (' + data.elapsed + 's)';
+                status.textContent = i18n('status_completed', {elapsed: data.elapsed});
                 btn.disabled = false;
                 eventSource.close();
             });
 
             eventSource.on('error', (data) => {
-                status.textContent = '检索失败: ' + data.error;
+                status.textContent = i18n('status_failed', {error: data.error});
                 appendLog(logPanel, 'ERROR: ' + data.error, data.elapsed, true);
                 appendLog(logPanel, data.detail || '', data.elapsed, true);
                 btn.disabled = false;
@@ -375,8 +498,14 @@
             const queryIds = {};
             const docIds = {};
 
-            // Query nodes
-            subgraph.nodes.Query.forEach((q, idx) => {
+            const MAX_QUERY_NODES = 50;
+            const MAX_DOC_NODES = 30;
+
+            // 截断 Query 节点
+            const queriesToShow = subgraph.nodes.Query.slice(0, MAX_QUERY_NODES);
+            const queryTruncated = subgraph.nodes.Query.length > MAX_QUERY_NODES;
+
+            queriesToShow.forEach((q, idx) => {
                 const id = 'Q_' + idx;
                 queryIds[q.question] = id;
                 nodes.add({
@@ -389,8 +518,11 @@
                 });
             });
 
-            // Doc nodes
-            subgraph.nodes.Doc.forEach((d, idx) => {
+            // 截断 Doc 节点
+            const docsToShow = subgraph.nodes.Doc.slice(0, MAX_DOC_NODES);
+            const docTruncated = subgraph.nodes.Doc.length > MAX_DOC_NODES;
+
+            docsToShow.forEach((d, idx) => {
                 const id = 'D_' + idx;
                 docIds[d.id] = id;
                 nodes.add({
@@ -403,7 +535,7 @@
                 });
             });
 
-            // Relationships
+            // Relationships（仅渲染已显示的节点之间的关系）
             subgraph.relationships.forEach(rel => {
                 if (rel.type === 'RELATED') {
                     const s = queryIds[rel.source.question];
@@ -430,6 +562,17 @@
                 }
             });
 
+            if (queryTruncated || docTruncated) {
+                const statusEl = document.getElementById('statusText');
+                const orig = statusEl.textContent;
+                statusEl.textContent = orig + ' ' + i18n('status_truncated', {
+                    qShown: queriesToShow.length,
+                    qTotal: subgraph.nodes.Query.length,
+                    dShown: docsToShow.length,
+                    dTotal: subgraph.nodes.Doc.length
+                });
+            }
+
             const container = document.getElementById('subgraphNetwork');
             const options = {
                 layout: { improvedLayout: true },
@@ -440,70 +583,206 @@
             subgraphNetwork = new vis.Network(container, { nodes, edges }, options);
         }
 
-        function renderTree(trees) {
+        function renderTree(trees, graphDepth) {
             const nodes = new vis.DataSet();
             const edges = new vis.DataSet();
             let nodeCounter = 0;
+            const maxDocPerQuery = (graphDepth && graphDepth <= 6) ? Infinity : 5;
 
-            function addTreeNode(tree, parentId, depth) {
+            // First pass: collect all nodes and their tree structure for radial layout
+            const treeNodes = []; // {id, isRoot, label, title, depth, parentId, children: [], docs: [], nodeId}
+
+            function collectTree(tree, parentId, depth) {
                 const id = 'T_' + (nodeCounter++);
                 const isRoot = parentId === null;
                 const label = tree.question.length > 25 ? tree.question.slice(0, 25) + '...' : tree.question;
                 const docCount = tree.docs ? tree.docs.length : 0;
-
-                nodes.add({
+                const node = {
                     id: id,
+                    isRoot: isRoot,
                     label: label + (docCount > 0 ? ` (${docCount})` : ''),
                     title: tree.question + '\nDocs: ' + docCount,
-                    color: {
-                        background: isRoot ? '#e74c3c' : (depth === 1 ? '#9b59b6' : '#8e44ad'),
-                        border: isRoot ? '#c0392b' : '#71368a'
-                    },
-                    shape: 'box',
-                    font: { color: 'white', size: 12 },
-                    level: depth
-                });
+                    depth: depth,
+                    parentId: parentId,
+                    children: [],
+                    docs: [],
+                    docTrunc: null
+                };
 
-                if (parentId !== null) {
-                    edges.add({ from: parentId, to: id, color: { color: '#bdc3c7' } });
-                }
-
-                // 为每个 doc 创建独立节点，显示文本内容
                 if (tree.docs && tree.docs.length > 0) {
-                    tree.docs.forEach(doc => {
+                    const docsToShow = tree.docs.slice(0, maxDocPerQuery);
+                    docsToShow.forEach(doc => {
                         const docId = 'D_' + (nodeCounter++);
                         const docText = doc.text.length > 100 ? doc.text.slice(0, 100) + '...' : doc.text;
-                        nodes.add({
+                        node.docs.push({
                             id: docId,
                             label: docText,
-                            title: doc.text,
-                            color: { background: '#2ecc71', border: '#27ae60' },
-                            shape: 'box',
-                            font: { color: 'white', size: 10 },
-                            level: depth + 1
+                            title: doc.text
                         });
-                        edges.add({ from: id, to: docId, color: { color: '#27ae60' } });
                     });
+                    if (tree.docs.length > maxDocPerQuery) {
+                        var truncId = 'TRUNC_' + (nodeCounter++);
+                        node.docTrunc = {
+                            id: truncId,
+                            label: i18n('more_docs_hidden', {count: tree.docs.length - maxDocPerQuery})
+                        };
+                    }
                 }
 
                 if (tree.children) {
-                    tree.children.forEach(child => addTreeNode(child, id, depth + 1));
+                    tree.children.forEach(child => {
+                        node.children.push(collectTree(child, id, depth + 1));
+                    });
                 }
-                return id;
+
+                if (isRoot) treeNodes.push(node);
+                return node;
             }
 
-            trees.forEach(tree => addTreeNode(tree, null, 0));
+            trees.forEach(tree => collectTree(tree, null, 0));
+
+            // Compute subtree sizes for angular distribution
+            function subtreeSize(node) {
+                let s = 1;
+                for (var i = 0; i < node.children.length; i++) s += subtreeSize(node.children[i]);
+                for (var j = 0; j < node.docs.length; j++) s++;
+                if (node.docTrunc) s++;
+                return s;
+            }
+
+            // Compute angles: assign each node an angular sector, position at (radius=depth*spacing, angle=mid-sector)
+            const LEVEL_RADIUS = [0, 150, 300, 450, 600, 750, 900];
+            const nodePositions = {};
+
+            function assignAngles(nodeList, startAngle, endAngle, cx, cy) {
+                var totalWeight = 0;
+                var weights = [];
+                for (var i = 0; i < nodeList.length; i++) {
+                    var w = Math.max(subtreeSize(nodeList[i]), 1);
+                    weights.push(w);
+                    totalWeight += w;
+                }
+
+                var angle = startAngle;
+                for (var i = 0; i < nodeList.length; i++) {
+                    var sweep = (endAngle - startAngle) * (weights[i] / totalWeight);
+                    var midAngle = angle + sweep / 2;
+                    var n = nodeList[i];
+                    var r = LEVEL_RADIUS[n.depth] || (n.depth * 150);
+                    nodePositions[n.id] = {
+                        x: cx + r * Math.cos(midAngle),
+                        y: cy + r * Math.sin(midAngle)
+                    };
+
+                    // Position docs evenly around parent
+                    if (n.docs.length > 0 || n.docTrunc) {
+                        var docCount = n.docs.length + (n.docTrunc ? 1 : 0);
+                        var docStart = angle;
+                        var docEnd = angle + sweep;
+                        var docStep = (docEnd - docStart) / (docCount + 1);
+                        var parentR = r;
+                        var docR = parentR + 60;
+                        for (var di = 0; di < n.docs.length; di++) {
+                            var da = docStart + docStep * (di + 1);
+                            nodePositions[n.docs[di].id] = {
+                                x: cx + docR * Math.cos(da),
+                                y: cy + docR * Math.sin(da)
+                            };
+                        }
+                        if (n.docTrunc) {
+                            var ta = docStart + docStep * (n.docs.length + 0.5);
+                            nodePositions[n.docTrunc.id] = {
+                                x: cx + docR * Math.cos(ta),
+                                y: cy + docR * Math.sin(ta)
+                            };
+                        }
+                    }
+
+                    if (n.children.length > 0) {
+                        assignAngles(n.children, angle, angle + sweep, cx, cy);
+                    }
+                    angle += sweep;
+                }
+            }
+
+            if (treeNodes.length > 0) {
+                assignAngles(treeNodes, 0, 2 * Math.PI, 0, 0);
+            }
+
+            // Add nodes to vis.DataSet with computed positions
+            function addVisNodes(node) {
+                nodes.add({
+                    id: node.id,
+                    label: node.label,
+                    title: node.title,
+                    x: nodePositions[node.id] ? nodePositions[node.id].x : 0,
+                    y: nodePositions[node.id] ? nodePositions[node.id].y : 0,
+                    fixed: node.isRoot,
+                    color: {
+                        background: node.isRoot ? '#e74c3c' : (node.depth === 1 ? '#9b59b6' : '#8e44ad'),
+                        border: node.isRoot ? '#c0392b' : '#71368a'
+                    },
+                    shape: 'box',
+                    font: { color: 'white', size: 12 }
+                });
+
+                if (node.parentId !== null) {
+                    edges.add({ from: node.parentId, to: node.id, color: { color: '#bdc3c7' } });
+                }
+
+                for (var i = 0; i < node.docs.length; i++) {
+                    var doc = node.docs[i];
+                    nodes.add({
+                        id: doc.id,
+                        label: doc.label,
+                        title: doc.title,
+                        x: nodePositions[doc.id] ? nodePositions[doc.id].x : 0,
+                        y: nodePositions[doc.id] ? nodePositions[doc.id].y : 0,
+                        fixed: false,
+                        color: { background: '#2ecc71', border: '#27ae60' },
+                        shape: 'box',
+                        font: { color: 'white', size: 10 }
+                    });
+                    edges.add({ from: node.id, to: doc.id, color: { color: '#27ae60' } });
+                }
+
+                if (node.docTrunc) {
+                    nodes.add({
+                        id: node.docTrunc.id,
+                        label: node.docTrunc.label,
+                        x: nodePositions[node.docTrunc.id] ? nodePositions[node.docTrunc.id].x : 0,
+                        y: nodePositions[node.docTrunc.id] ? nodePositions[node.docTrunc.id].y : 0,
+                        fixed: false,
+                        color: { background: '#95a5a6', border: '#7f8c8d' },
+                        shape: 'box',
+                        font: { color: 'white', size: 9 }
+                    });
+                    edges.add({ from: node.id, to: node.docTrunc.id, color: { color: '#95a5a6' } });
+                }
+
+                for (var j = 0; j < node.children.length; j++) {
+                    addVisNodes(node.children[j]);
+                }
+            }
+
+            for (var i = 0; i < treeNodes.length; i++) {
+                addVisNodes(treeNodes[i]);
+            }
 
             const container = document.getElementById('treeNetwork');
             const options = {
-                layout: {
-                    hierarchical: {
-                        enabled: true,
-                        direction: 'UD',
-                        sortMethod: 'directed'
+                layout: { enabled: false },
+                physics: {
+                    enabled: true,
+                    stabilization: { iterations: 100 },
+                    barnesHut: {
+                        gravitationalConstant: -2000,
+                        centralGravity: 0.1,
+                        springLength: 100,
+                        springConstant: 0.01,
+                        damping: 0.5
                     }
                 },
-                physics: { enabled: false },
                 interaction: { hover: true, tooltipDelay: 200 }
             };
             if (treeNetwork) treeNetwork.destroy();

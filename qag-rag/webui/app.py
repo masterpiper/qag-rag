@@ -6,6 +6,7 @@ FastAPI 服务：
 - 静态文件：托管前端可视化页面
 """
 
+import asyncio
 import json
 import os
 import sys
@@ -22,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from pipelines.qag_retrieval import (
+    filter_retrieval_tree,
     hierarchical_summarize,
     load_pipeline_config,
     retrieve_subgraph,
@@ -49,6 +51,8 @@ class RetrieveRequest(BaseModel):
     graph_depth: Optional[int] = None
     doc_top_k: Optional[int] = None
     related_threshold: Optional[float] = None
+    filter_enabled: bool = True
+    filter_threshold: Optional[float] = None
 
 
 # ---------------------------------------------------------------------------
@@ -77,7 +81,7 @@ async def api_retrieve(req: RetrieveRequest):
         t0 = time.time()
 
         try:
-            yield _sse_event({"type": "log", "msg": f"加载配置: {req.config}", "elapsed": round(time.time() - t0, 1)})
+            yield _sse_event({"type": "log", "msg": f"Loading config: {req.config}", "elapsed": round(time.time() - t0, 1)})
             cfg = load_pipeline_config(req.config)
             llm_cfg = cfg["llm"]
             emb_cfg = cfg["embedding"]
@@ -95,7 +99,7 @@ async def api_retrieve(req: RetrieveRequest):
             if req.related_threshold is not None:
                 ret_cfg.related_threshold = req.related_threshold
 
-            yield _sse_event({"type": "log", "msg": f"检索参数: query_top_k={ret_cfg.query_top_k}, "
+            yield _sse_event({"type": "log", "msg": f"Retrieval params: query_top_k={ret_cfg.query_top_k}, "
                            f"graph_depth={ret_cfg.graph_depth}, "
                            f"doc_top_k={ret_cfg.doc_top_k}, "
                            f"related_threshold={ret_cfg.related_threshold}", "elapsed": round(time.time() - t0, 1)})
@@ -116,8 +120,8 @@ async def api_retrieve(req: RetrieveRequest):
                 base_url=emb_cfg.base_url,
             )
 
-            # Step 1: 子图检索
-            yield _sse_event({"type": "log", "msg": "开始子图检索...", "elapsed": round(time.time() - t0, 1)})
+            # Step 1: Subgraph retrieval
+            yield _sse_event({"type": "log", "msg": "Starting subgraph retrieval...", "elapsed": round(time.time() - t0, 1)})
             subgraph = retrieve_subgraph(
                 question=req.question,
                 llm_provider=llm_provider,
@@ -126,9 +130,22 @@ async def api_retrieve(req: RetrieveRequest):
                 neo4j_config=neo4j_cfg,
                 retrieval_config=ret_cfg,
             )
-            yield _sse_event({"type": "log", "msg": f"子图完成: {len(subgraph['root_queries'])} 根查询, "
-                           f"{len(subgraph['nodes']['Query'])} Query节点, "
-                           f"{len(subgraph['nodes']['Doc'])} Doc节点", "elapsed": round(time.time() - t0, 1)})
+            yield _sse_event({"type": "log", "msg": f"Subgraph complete: {len(subgraph['root_queries'])} root queries, "
+                           f"{len(subgraph['nodes']['Query'])} Query nodes, "
+                           f"{len(subgraph['nodes']['Doc'])} Doc nodes", "elapsed": round(time.time() - t0, 1)})
+
+            # Step 1.5: Feature-based filtering (论文 Section 3.3)
+            if req.filter_enabled:
+                threshold = req.filter_threshold if req.filter_threshold is not None else ret_cfg.filter_threshold
+                yield _sse_event({"type": "log", "msg": f"Feature filter: threshold={threshold}", "elapsed": round(time.time() - t0, 1)})
+                subgraph = filter_retrieval_tree(
+                    subgraph, target_question=req.question,
+                    embedding_provider=embedding_provider,
+                    threshold=threshold,
+                )
+                fi = subgraph.get('_filter_info', {})
+                yield _sse_event({"type": "log", "msg": f"Filter complete: kept {fi.get('kept_docs', '?')}/{fi.get('original_docs', '?')} Doc "
+                               f"(pruned {fi.get('pruned_docs', '?')} Doc, {fi.get('pruned_queries', 0)} isolated Query)", "elapsed": round(time.time() - t0, 1)})
 
             # 推送子图
             yield _sse_event({
@@ -137,55 +154,62 @@ async def api_retrieve(req: RetrieveRequest):
                 "elapsed": round(time.time() - t0, 1),
             })
 
-            # Step 2: 树转换
-            yield _sse_event({"type": "log", "msg": "转换为树形结构...", "elapsed": round(time.time() - t0, 1)})
-            trees = subgraph_to_tree(subgraph)
-            yield _sse_event({"type": "log", "msg": f"树转换完成: {len(trees)} 棵树", "elapsed": round(time.time() - t0, 1)})
+            # Step 2: Tree conversion
+            yield _sse_event({"type": "log", "msg": "Converting to tree structure...", "elapsed": round(time.time() - t0, 1)})
+            trees = subgraph_to_tree(
+                subgraph, target_question=req.question, max_depth=ret_cfg.graph_depth - 1
+            )
+            yield _sse_event({"type": "log", "msg": f"Tree conversion complete: {len(trees)} trees", "elapsed": round(time.time() - t0, 1)})
 
             # 推送树
             yield _sse_event({
                 "type": "tree",
                 "tree": trees,
+                "graph_depth": ret_cfg.graph_depth,
                 "elapsed": round(time.time() - t0, 1),
             })
 
-            # Step 3: 分层汇总
-            yield _sse_event({"type": "log", "msg": "开始分层汇总...", "elapsed": round(time.time() - t0, 1)})
+            # Step 3: Hierarchical summarization (stream each layer result)
+            yield _sse_event({"type": "log", "msg": "Starting hierarchical summarization...", "elapsed": round(time.time() - t0, 1)})
 
-            layer_summaries = []
+            queue: asyncio.Queue = asyncio.Queue()
+
             def on_layer_summary(d, s):
-                layer_summaries.append((d, s))
-
-            answer = hierarchical_summarize(
-                trees=trees,
-                target_question=req.question,
-                llm_provider=llm_provider,
-                on_layer_summary=on_layer_summary,
-            )
-
-            # 推送每层摘要到前端日志
-            for d, s in layer_summaries:
-                yield _sse_event({
+                queue.put_nowait({
                     "type": "log",
-                    "msg": f"[depth={d}] {s[:200]}...",
+                    "msg": f"[depth={d}] {s[:500]}...",
                     "elapsed": round(time.time() - t0, 1),
                 })
 
-            yield _sse_event({"type": "log", "msg": "汇总完成", "elapsed": round(time.time() - t0, 1)})
+            async def run_summarize():
+                answer = hierarchical_summarize(
+                    trees=trees,
+                    target_question=req.question,
+                    llm_provider=llm_provider,
+                    on_layer_summary=on_layer_summary,
+                )
+                await queue.put({
+                    "type": "answer",
+                    "answer": answer,
+                    "elapsed": round(time.time() - t0, 1),
+                })
 
-            # 推送答案
-            yield _sse_event({
-                "type": "answer",
-                "answer": answer,
-                "elapsed": round(time.time() - t0, 1),
-            })
+            task = asyncio.create_task(run_summarize())
+            answer = None
+            while True:
+                event = await queue.get()
+                yield _sse_event(event)
+                if event["type"] == "answer":
+                    answer = event["answer"]
+                    break
 
+            yield _sse_event({"type": "log", "msg": "Summarization complete", "elapsed": round(time.time() - t0, 1)})
             yield _sse_event({"type": "done", "elapsed": round(time.time() - t0, 1)})
 
         except Exception as e:
             import traceback
             tb = traceback.format_exc()
-            yield _sse_event({"type": "log", "msg": f"错误: {e}", "elapsed": round(time.time() - t0, 1)})
+            yield _sse_event({"type": "log", "msg": f"Error: {e}", "elapsed": round(time.time() - t0, 1)})
             yield _sse_event({"type": "error", "error": str(e), "detail": tb, "elapsed": round(time.time() - t0, 1)})
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")

@@ -106,14 +106,17 @@ class TestSubgraphToTree(unittest.TestCase):
                 }
             ]
         }
-        trees = subgraph_to_tree(subgraph)
+        trees = subgraph_to_tree(subgraph, target_question="target")
         self.assertEqual(len(trees), 1)
         root = trees[0]
-        self.assertEqual(root["question"], "q1")
-        self.assertEqual(len(root["docs"]), 1)
-        self.assertEqual(root["docs"][0]["id"], "d1")
+        self.assertEqual(root["question"], "target")
         self.assertEqual(len(root["children"]), 1)
-        self.assertEqual(root["children"][0]["question"], "q2")
+        child = root["children"][0]
+        self.assertEqual(child["question"], "q1")
+        self.assertEqual(len(child["docs"]), 1)
+        self.assertEqual(child["docs"][0]["id"], "d1")
+        self.assertEqual(len(child["children"]), 1)
+        self.assertEqual(child["children"][0]["question"], "q2")
 
     def test_empty_subgraph(self):
         subgraph = {
@@ -121,8 +124,62 @@ class TestSubgraphToTree(unittest.TestCase):
             "nodes": {"Query": [], "Doc": []},
             "relationships": []
         }
-        trees = subgraph_to_tree(subgraph)
-        self.assertEqual(trees, [])
+        trees = subgraph_to_tree(subgraph, target_question="target")
+        self.assertEqual(len(trees), 1)
+        self.assertEqual(trees[0]["question"], "target")
+        self.assertEqual(trees[0]["children"], [])
+
+    def test_max_depth_pruning(self):
+        """Tree depth should not exceed max_depth even if RELATED edges form long chains."""
+        subgraph = {
+            "root_queries": [{"question": "q1", "distance": 0.9}],
+            "nodes": {
+                "Query": [
+                    {"question": "q1"}, {"question": "q2"},
+                    {"question": "q3"}, {"question": "q4"},
+                ],
+                "Doc": []
+            },
+            "relationships": [
+                # Chain: q1 -- q2 -- q3 -- q4 (depth could reach 3 from q1)
+                {
+                    "source": {"label": "Query", "question": "q1"},
+                    "target": {"label": "Query", "question": "q2"},
+                    "type": "RELATED", "properties": {"sim": 0.9},
+                },
+                {
+                    "source": {"label": "Query", "question": "q2"},
+                    "target": {"label": "Query", "question": "q3"},
+                    "type": "RELATED", "properties": {"sim": 0.8},
+                },
+                {
+                    "source": {"label": "Query", "question": "q3"},
+                    "target": {"label": "Query", "question": "q4"},
+                    "type": "RELATED", "properties": {"sim": 0.7},
+                },
+            ]
+        }
+
+        # Without depth limit: target → q1 → q2 → q3 → q4 (depth 4)
+        # With max_depth=2: _build_tree stops when depth > 2, so q4(depth=3) is pruned.
+        # Resulting tree from root: target(depth=0) → q1(1) → q2(2) → q3(3)
+        trees = subgraph_to_tree(subgraph, target_question="target", max_depth=2)
+        root = trees[0]
+        self.assertEqual(root["question"], "target")
+        self.assertEqual(len(root["children"]), 1)  # q1
+
+        def _max_child_depth(node):
+            if not node.get("children"):
+                return 0
+            return 1 + max(_max_child_depth(c) for c in node["children"])
+
+        tree_depth = _max_child_depth(root)
+        # max_depth=2 prunes q4, so tree_depth=3 (not 4 without pruning)
+        self.assertEqual(tree_depth, 3)
+
+        # Verify pruning: without limit, tree_depth would be 4
+        trees_unlimited = subgraph_to_tree(subgraph, target_question="target", max_depth=None)
+        self.assertEqual(_max_child_depth(trees_unlimited[0]), 4)
 
 
 class TestHierarchicalSummarize(unittest.TestCase):
@@ -151,6 +208,40 @@ class TestHierarchicalSummarize(unittest.TestCase):
         llm = MockLLMProvider()
         answer = hierarchical_summarize([], "target question", llm)
         self.assertIn("No relevant information", answer)
+
+    def test_empty_chunks_with_valid_context(self):
+        """Non-leaf node has no docs (empty chunks) but receives valid Context from deeper layer.
+        The summary must NOT discard the context; it should preserve the information."""
+
+        class LoggingMockLLMProvider(BaseLLMProvider):
+            def generate(self, prompt: str, model=None, **kwargs) -> str:
+                if 'Yamanaka factors' in prompt and 'Oct3/4' in prompt:
+                    return "The Yamanaka factors are Oct3/4, Sox2, Klf4, and c-Myc."
+                return "This is a mock summary for testing."
+
+            def embed(self, text: str, model=None) -> list[float]:
+                return [0.0] * 1024
+
+        # 构建一棵两层树：叶子层有 docs，中间层 docs 为空
+        tree = {
+            "question": "What are the Yamanaka and Thomson factors?",
+            "docs": [],  # 中间层无 docs
+            "children": [
+                {
+                    "question": "What are the Yamanaka factors?",
+                    "docs": [{"id": "d1", "text": "The Yamanaka factors, defined as Oct3/4, Sox2, Klf4, and c-Myc, are highly expressed in embryonic stem cells."}],
+                    "children": []
+                }
+            ]
+        }
+
+        llm = LoggingMockLLMProvider()
+        answer = hierarchical_summarize([tree], "target question", llm)
+
+        # 验证：最终答案不应是 "no relevant information found"
+        self.assertNotIn("no relevant information was found", answer.lower(),
+                         "Answer should preserve context from deeper layers, not discard it when chunks are empty")
+        self.assertIn("Yamanaka", answer)
 
 
 # ---------------------------------------------------------------------------

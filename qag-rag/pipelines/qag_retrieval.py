@@ -232,15 +232,172 @@ def retrieve_subgraph(
 
 
 # ---------------------------------------------------------------------------
-# Step 3：子图 → 树
+# Step 3：Feature-based filtering (论文 Section 3.3 Filter)
 # ---------------------------------------------------------------------------
 
-def subgraph_to_tree(subgraph: Dict[str, Any]) -> List[Dict[str, Any]]:
+def filter_retrieval_tree(
+    subgraph: Dict[str, Any],
+    target_question: str,
+    embedding_provider: BaseLLMProvider,
+    threshold: float = 0.6,
+) -> Dict[str, Any]:
     """
-    将子图按 RELATED 关系层级展开为多棵根树。
+    基于特征的过滤机制（论文 Eq.7-9）。
+
+    从四个来源提取特征：(1) 原始查询 (2) 匹配的相似问题 (3) 直接关联的 Doc
+    对每个超过第 1 跳的 Doc 计算与特征矩阵的余弦相似度均值，低于阈值的剪枝。
 
     Returns:
-        [root_tree_1, root_tree_2, ...]
+        过滤后的子图（Doc 节点和关系被剪枝）
+    """
+    import numpy as np
+
+    # --- 构建特征集 ---
+    features: List[str] = []
+
+    # (1) 原始查询
+    features.append(target_question)
+
+    # (2) 匹配的相似问题节点（Q_S）
+    for rq in subgraph['root_queries']:
+        q = rq.get('question', '')
+        if q:
+            features.append(q)
+
+    # (3) 第 1 跳直接关联的 Doc（通过 GENERATE_BY 与 root queries 相连的）
+    root_questions = {rq['question'] for rq in subgraph['root_queries']}
+    layer1_docs: Set[str] = set()
+    for rel in subgraph['relationships']:
+        if rel['type'] == 'GENERATE_BY':
+            src = rel['source'].get('question', '')
+            if src in root_questions:
+                doc_id = rel['target'].get('id', '')
+                if doc_id:
+                    layer1_docs.add(doc_id)
+
+    # 添加 layer-1 docs 的文本作为特征
+    doc_text_map = {d['id']: d['text'] for d in subgraph['nodes']['Doc']}
+    for doc_id in layer1_docs:
+        if doc_id in doc_text_map and doc_text_map[doc_id]:
+            features.append(doc_text_map[doc_id])
+
+    if not features:
+        return subgraph
+
+    # --- 构建特征矩阵的嵌入 ---
+    feature_embeddings = []
+    for f in features:
+        emb = embedding_provider.embed(f)
+        feature_embeddings.append(emb)
+
+    # --- 对每个非 layer-1 的 Doc 计算相似度得分 ---
+    nodes_query = subgraph['nodes']['Query']
+    nodes_doc = subgraph['nodes']['Doc']
+    relationships = subgraph['relationships']
+
+    # 找出所有 Doc id 到其关联 Query 的映射
+    doc_to_queries: Dict[str, List[str]] = defaultdict(list)
+    for rel in relationships:
+        if rel['type'] == 'GENERATE_BY':
+            doc_id = rel['target'].get('id', '')
+            q = rel['source'].get('question', '')
+            if doc_id and q:
+                doc_to_queries[doc_id].append(q)
+
+    # 计算每个非 layer-1 Doc 的 score
+    kept_doc_ids = set(layer1_docs)  # layer-1 docs 不过滤
+    for doc_id, doc_text in list(doc_text_map.items()):
+        if doc_id in layer1_docs:
+            continue  # layer-1 跳过过滤
+        if not doc_text:
+            continue
+        doc_emb = embedding_provider.embed(doc_text)
+        # score = 平均余弦相似度
+        sims = []
+        for f_emb in feature_embeddings:
+            sim = _cosine_sim(doc_emb, f_emb)
+            sims.append(sim)
+        score = float(np.mean(sims))
+        if score >= threshold:
+            kept_doc_ids.add(doc_id)
+
+    # --- 找出仍有 Doc 的 Query 节点 ---
+    queries_with_docs: Set[str] = set()
+    for rel in relationships:
+        if rel['type'] == 'GENERATE_BY' and rel['target'].get('id', '') in kept_doc_ids:
+            q = rel['source'].get('question', '')
+            if q:
+                queries_with_docs.add(q)
+
+    # 保留 root queries（即使没有 Doc）和仍有 Doc 的 Query 节点
+    root_q_set = {rq['question'] for rq in subgraph['root_queries']}
+    kept_queries = queries_with_docs | root_q_set
+
+    # --- 构建过滤后的子图 ---
+    filtered_nodes_query = [q for q in nodes_query if q['question'] in kept_queries]
+    filtered_nodes_doc = [d for d in nodes_doc if d['id'] in kept_doc_ids]
+    filtered_relationships = [
+        r for r in relationships
+        if (r['type'] == 'RELATED'
+            and r['source'].get('question', '') in kept_queries
+            and r['target'].get('question', '') in kept_queries)
+        or (r['type'] == 'GENERATE_BY'
+            and r['target'].get('id', '') in kept_doc_ids
+            and r['source'].get('question', '') in kept_queries)
+    ]
+
+    original_doc_count = len(nodes_doc)
+    filtered_doc_count = len(filtered_nodes_doc)
+    pruned_queries = len(nodes_query) - len(filtered_nodes_query)
+
+    result = dict(subgraph)
+    result['nodes'] = dict(subgraph['nodes'])
+    result['nodes']['Query'] = filtered_nodes_query
+    result['nodes']['Doc'] = filtered_nodes_doc
+    result['relationships'] = filtered_relationships
+    result['_filter_info'] = {
+        'original_docs': original_doc_count,
+        'kept_docs': filtered_doc_count,
+        'pruned_docs': original_doc_count - filtered_doc_count,
+        'pruned_queries': pruned_queries,
+    }
+    return result
+
+
+def _cosine_sim(a: List[float], b: List[float]) -> float:
+    """计算两个向量的余弦相似度。"""
+    import numpy as np
+    a_arr = np.array(a, dtype=np.float32)
+    b_arr = np.array(b, dtype=np.float32)
+    dot = float(np.dot(a_arr, b_arr))
+    norm_a = float(np.linalg.norm(a_arr))
+    norm_b = float(np.linalg.norm(b_arr))
+    if norm_a == 0 or norm_b == 0:
+        return 0.0
+    return dot / (norm_a * norm_b)
+
+
+# ---------------------------------------------------------------------------
+# Step 4：子图 → 树
+# ---------------------------------------------------------------------------
+
+def subgraph_to_tree(
+    subgraph: Dict[str, Any],
+    target_question: str,
+    max_depth: Optional[int] = None,
+) -> List[Dict[str, Any]]:
+    """
+    将子图按 RELATED 关系层级展开为一棵树。
+
+    target_question 作为虚拟根节点，所有召回的查询作为其子节点，
+    最终只返回一棵树，避免多树合并导致数据膨胀。
+
+    Args:
+        max_depth: 树的最大深度（不含虚拟根），默认为 None 表示不限制。
+                   建议设为 retrieval_config.graph_depth + 1 以与图遍历一致。
+
+    Returns:
+        [root_tree]
     """
     root_questions = [rq['question'] for rq in subgraph['root_queries']]
     query_nodes = {n['question'] for n in subgraph['nodes']['Query']}
@@ -268,6 +425,8 @@ def subgraph_to_tree(subgraph: Dict[str, Any]) -> List[Dict[str, Any]]:
     def _build_tree(q: str, visited: Set[str], depth: int = 0) -> Optional[Dict[str, Any]]:
         if q in visited:
             return None
+        if max_depth is not None and depth > max_depth:
+            return None
         visited.add(q)
         node = {
             'question': q,
@@ -281,15 +440,29 @@ def subgraph_to_tree(subgraph: Dict[str, Any]) -> List[Dict[str, Any]]:
                     node['children'].append(child_tree)
         return node
 
-    trees = []
-    visited: Set[str] = set()
+    # 用 target_question 作为根，所有召回的查询作为子节点构建一棵树
+    visited: Set[str] = {target_question}
+    children = []
     for rq in root_questions:
-        if rq in query_nodes and rq not in visited:
+        if rq in query_nodes:
             tree = _build_tree(rq, visited)
             if tree:
-                trees.append(tree)
+                children.append(tree)
 
-    return trees
+    # Filter 剪枝后可能产生独立连通分量——保留但未被访问的 Query 节点
+    # 直接作为根的子节点挂载
+    for q in query_nodes:
+        if q not in visited:
+            tree = _build_tree(q, visited)
+            if tree:
+                children.append(tree)
+
+    root = {
+        'question': target_question,
+        'docs': [],
+        'children': children,
+    }
+    return [root]
 
 
 # ---------------------------------------------------------------------------
@@ -420,8 +593,23 @@ def main():
           f"Doc节点数: {len(subgraph['nodes']['Doc'])}, "
           f"关系数: {len(subgraph['relationships'])}")
 
-    # 转化为树
-    trees = subgraph_to_tree(subgraph)
+    # 特征过滤（论文 Section 3.3 Filter）
+    print(f"[过滤] 阈值={ret_cfg.filter_threshold}")
+    subgraph = filter_retrieval_tree(
+        subgraph, target_question=args.question,
+        embedding_provider=embedding_provider,
+        threshold=ret_cfg.filter_threshold,
+    )
+    fi = subgraph.get('_filter_info', {})
+    print(f"[过滤] 原始 Doc={fi.get('original_docs', '?')}, "
+          f"保留 Doc={fi.get('kept_docs', '?')}, "
+          f"剪枝 Doc={fi.get('pruned_docs', '?')}, "
+          f"剪枝 Query={fi.get('pruned_queries', '?')}")
+
+    # 转化为树（限制深度与图遍历一致）
+    trees = subgraph_to_tree(
+        subgraph, target_question=args.question, max_depth=ret_cfg.graph_depth - 1
+    )
     print(f"[树] 根树数量: {len(trees)}")
 
     # 自底向上汇总

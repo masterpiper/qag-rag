@@ -61,6 +61,7 @@ class RetrievalConfig:
     graph_depth: int = 2
     doc_top_k: int = 5
     query_top_k: int = 5
+    filter_threshold: float = 0.6  # tau_f: score below which chunks are pruned
 
 
 def _load_from_env():
