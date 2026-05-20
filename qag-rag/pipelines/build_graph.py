@@ -37,7 +37,7 @@ def build_knowledge_graph(
         skip_batches: 跳过的批次数（用于断点续建）
     """
     print("=" * 60)
-    print("QAG-RAG: 知识图谱构建")
+    print("QAG-RAG: Question-Chunk Graph构建")
     print("=" * 60)
     print(f"Milvus: {milvus_host}:{milvus_port}")
     print(f"Neo4j: {neo4j_config.uri}")

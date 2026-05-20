@@ -44,6 +44,7 @@ class MilvusConfig:
     db_name: str = "rag_mini_bioasq"
     query_collection: str = "bioasq_query"
     chunk_collection: str = "native_rag"
+    index_type: str = "IVF_FLAT"
 
 
 @dataclass
@@ -89,6 +90,7 @@ def _load_from_env():
         db_name=os.getenv("MILVUS_DB_NAME", "rag_mini_bioasq"),
         query_collection=os.getenv("MILVUS_QUERY_COLLECTION", "bioasq_query"),
         chunk_collection=os.getenv("MILVUS_CHUNK_COLLECTION", "native_rag"),
+        index_type=os.getenv("MILVUS_INDEX_TYPE", "IVF_FLAT"),
     )
 
     neo4j_uri = os.getenv("NEO4J_URI", "bolt://localhost:7687")
