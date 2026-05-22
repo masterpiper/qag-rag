@@ -11,4 +11,4 @@ __pycache__
 *.log
 CLAUDE.md
 QWEN.md
-.env
+*.env
