@@ -7,7 +7,7 @@ A RAG system for biomedical question answering, evaluated on the [BioASQ](https:
 ### 1. Setup
 
 ```bash
-pip install openai ollama pymilvus neo4j scikit-learn numpy spacy keybert datasets tqdm dashscope python-dotenv fastapi uvicorn pydantic
+pip install -r requirements.txt
 python -m spacy download en_core_web_sm
 ```
 
