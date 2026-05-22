@@ -12,3 +12,4 @@ __pycache__
 CLAUDE.md
 QWEN.md
 *.env
+.ruff_cache
