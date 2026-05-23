@@ -1,6 +1,6 @@
 # QAG-RAG: Knowledge Graph Enhanced Retrieval-Augmented Generation
 
-A RAG system for biomedical question answering, evaluated on the [BioASQ](https://www.bioasq.org/) dataset. Combines **Milvus** vector retrieval with **Neo4j** knowledge graph traversal for hybrid recall and bottom-up hierarchical summarization.
+A RAG system for biomedical question answering, evaluated on the [mini-BioASQ](https://huggingface.co/datasets/rag-datasets/rag-mini-bioasq) dataset. Combines **Milvus** vector retrieval with **Neo4j** knowledge graph traversal for hybrid recall and bottom-up hierarchical summarization.
 
 ## Quick Start
 
