@@ -7,6 +7,11 @@ A RAG system for biomedical question answering, evaluated on the [mini-BioASQ](h
 ### 1. Setup
 
 ```bash
+# 使用 conda 创建虚拟环境（推荐）
+conda create -n qag-rag python=3.12 -y
+conda activate qag-rag
+
+# 安装依赖
 pip install -r requirements.txt
 python -m spacy download en_core_web_sm
 ```
