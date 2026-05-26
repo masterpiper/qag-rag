@@ -1,6 +1,6 @@
 docker_volumes
 .vscode
-.cluade
+.claude
 __pycache__
 .ipynb_checkpoints
 *.pyc
